@@ -31,16 +31,18 @@ print("Overall rank:", team.get("summary_overall_rank"))
 print("Total points:", team.get("summary_overall_points"))
 print("Team value:", team.get("last_deadline_value"))
 
-# 2. All players + gameweek data
+# 2. FPL database
 bootstrap = get_json(
     "https://fantasy.premierleague.com/api/bootstrap-static/"
 )
 
 players = bootstrap.get("elements", [])
 events = bootstrap.get("events", [])
+teams = bootstrap.get("teams", [])
 
 print("Players loaded:", len(players))
 print("Gameweeks loaded:", len(events))
+print("FPL teams loaded:", len(teams))
 
 # 3. Fixtures
 fixtures = get_json(
