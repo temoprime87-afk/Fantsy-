@@ -19,5 +19,4 @@ jobs:
           python-version: "3.12"
 
       - name: Run FPL Agent
-        run: |
-        python fpl_agent.py
+        run: python fpl_agent.py
