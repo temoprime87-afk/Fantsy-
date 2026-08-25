@@ -2,7 +2,6 @@ import json
 import urllib.request
 import urllib.error
 import time
-import os
 from datetime import datetime, timezone
 
 
@@ -25,33 +24,10 @@ USER_AGENT = (
 
 
 # ============================================================
-# AUTHENTICATION
-# ============================================================
-
-# GitHub Secret:
-# FPL_COOKIE
-#
-# Example value:
-# pl_profile=xxxx; sessionid=xxxx; ACCESS_TOKEN=xxxx
-#
-# Optional:
-# FPL_ACCESS_TOKEN
-#
-# If available, it will be sent as:
-# X-API-Authorization: Bearer TOKEN
-
-FPL_COOKIE = os.getenv("FPL_COOKIE", "").strip()
-FPL_ACCESS_TOKEN = os.getenv(
-    "FPL_ACCESS_TOKEN",
-    ""
-).strip()
-
-
-# ============================================================
 # API
 # ============================================================
 
-def get_json(url, authenticated=False, retries=3):
+def get_json(url, retries=3):
 
     last_error = None
 
@@ -59,38 +35,19 @@ def get_json(url, authenticated=False, retries=3):
 
         try:
 
-            headers = {
-                "User-Agent": USER_AGENT,
-                "Accept": (
-                    "application/json, "
-                    "text/javascript, */*; q=0.01"
-                ),
-                "Referer":
-                    "https://fantasy.premierleague.com/",
-                "Origin":
-                    "https://fantasy.premierleague.com",
-                "X-Requested-With":
-                    "XMLHttpRequest"
-            }
-
-            if authenticated:
-
-                if FPL_COOKIE:
-
-                    headers["Cookie"] = FPL_COOKIE
-
-                if FPL_ACCESS_TOKEN:
-
-                    headers[
-                        "X-API-Authorization"
-                    ] = (
-                        "Bearer "
-                        + FPL_ACCESS_TOKEN
-                    )
-
             request = urllib.request.Request(
                 url,
-                headers=headers,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "application/json",
+                    "Referer": (
+                        "https://fantasy.premierleague.com/"
+                    ),
+                    "Origin": (
+                        "https://fantasy.premierleague.com"
+                    ),
+                    "X-Requested-With": "XMLHttpRequest"
+                },
                 method="GET"
             )
 
@@ -107,43 +64,13 @@ def get_json(url, authenticated=False, retries=3):
 
         except urllib.error.HTTPError as error:
 
-            body = ""
-
-            try:
-                body = error.read().decode(
-                    "utf-8",
-                    errors="ignore"
-                )
-            except:
-                pass
-
             last_error = (
                 f"HTTP {error.code}: "
                 f"{error.reason}"
             )
 
-            if error.code == 401:
-
-                raise RuntimeError(
-                    "AUTH ERROR 401. "
-                    "FPL authentication is invalid."
-                )
-
-            if error.code == 403:
-
-                raise RuntimeError(
-                    "AUTH ERROR 403. "
-                    "FPL rejected authentication. "
-                    "Update FPL_COOKIE."
-                )
-
-            if error.code == 404:
-
-                raise RuntimeError(
-                    f"HTTP 404: {url}"
-                )
-
             if error.code in [
+                403,
                 429,
                 500,
                 502,
@@ -157,11 +84,7 @@ def get_json(url, authenticated=False, retries=3):
 
                 continue
 
-            raise RuntimeError(
-                f"{last_error} | "
-                f"URL: {url} | "
-                f"Response: {body[:300]}"
-            )
+            break
 
         except urllib.error.URLError as error:
 
@@ -241,7 +164,7 @@ def money(value):
 
 print("")
 print("========================================")
-print("       FPL AUTONOMOUS AGENT v3")
+print("       FPL AUTONOMOUS AGENT v4")
 print("========================================")
 print("")
 
@@ -252,34 +175,8 @@ print(
 
 print(
     "Authentication:",
-    "AVAILABLE"
-    if (
-        FPL_COOKIE
-        or FPL_ACCESS_TOKEN
-    )
-    else
-    "MISSING"
+    "NOT REQUIRED"
 )
-
-
-if not FPL_COOKIE and not FPL_ACCESS_TOKEN:
-
-    print("")
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    print("ERROR: FPL authentication is missing.")
-    print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    print("")
-    print(
-        "Add GitHub Secret: FPL_COOKIE"
-    )
-    print("")
-    print(
-        "Do NOT put your FPL password in this code."
-    )
-
-    raise RuntimeError(
-        "FPL_COOKIE or FPL_ACCESS_TOKEN is required."
-    )
 
 
 # ============================================================
@@ -289,29 +186,43 @@ if not FPL_COOKIE and not FPL_ACCESS_TOKEN:
 print("")
 print("Loading team data...")
 
-team = get_json(
-    f"{BASE_URL}/entry/{TEAM_ID}/"
-)
+try:
 
-print(
-    "Team:",
-    team.get(
-        "name",
-        "Unknown"
+    team = get_json(
+        f"{BASE_URL}/entry/{TEAM_ID}/"
     )
-)
 
-print(
-    "Manager:",
-    team.get(
-        "player_first_name",
-        ""
-    ),
-    team.get(
-        "player_last_name",
-        ""
+    print(
+        "Team:",
+        team.get(
+            "name",
+            "Unknown"
+        )
     )
-)
+
+    print(
+        "Manager:",
+        team.get(
+            "player_first_name",
+            ""
+        ),
+        team.get(
+            "player_last_name",
+            ""
+        )
+    )
+
+except Exception as error:
+
+    print(
+        "ERROR loading team:",
+        error
+    )
+
+    team = {
+        "name": "Unknown",
+        "current_event": 1
+    }
 
 
 # ============================================================
@@ -417,9 +328,21 @@ print(
 print("")
 print("Loading fixtures...")
 
-fixtures = get_json(
-    f"{BASE_URL}/fixtures/"
-)
+try:
+
+    fixtures = get_json(
+        f"{BASE_URL}/fixtures/"
+    )
+
+except Exception as error:
+
+    print(
+        "WARNING: Fixtures unavailable:",
+        error
+    )
+
+    fixtures = []
+
 
 print(
     "Fixtures loaded:",
@@ -445,10 +368,12 @@ for fpl_team in teams:
 # ============================================================
 
 positions = {
+
     1: "GK",
     2: "DEF",
     3: "MID",
     4: "FWD"
+
 }
 
 
@@ -562,7 +487,7 @@ print("========================================")
 
 
 # ------------------------------------------------------------
-# FIRST METHOD: /my-team/{TEAM_ID}/
+# METHOD 1: MY TEAM
 # ------------------------------------------------------------
 
 my_team_url = (
@@ -573,8 +498,7 @@ my_team_url = (
 try:
 
     my_team_data = get_json(
-        my_team_url,
-        authenticated=True
+        my_team_url
     )
 
     picks_from_my_team = my_team_data.get(
@@ -585,11 +509,13 @@ try:
     if picks_from_my_team:
 
         current_picks = {
+
             "picks":
                 picks_from_my_team,
 
             "source":
                 "my-team"
+
         }
 
         print(
@@ -623,13 +549,17 @@ except Exception as error:
     squad_error = str(error)
 
     print(
-        "my-team failed:",
+        "my-team unavailable."
+    )
+
+    print(
+        "Reason:",
         squad_error
     )
 
 
 # ------------------------------------------------------------
-# SECOND METHOD: EVENT PICKS
+# METHOD 2: EVENT PICKS
 # ------------------------------------------------------------
 
 if not current_player_ids:
@@ -648,8 +578,7 @@ if not current_player_ids:
     try:
 
         event_picks = get_json(
-            picks_url,
-            authenticated=True
+            picks_url
         )
 
         picks_list = event_picks.get(
@@ -690,9 +619,30 @@ if not current_player_ids:
         squad_error = str(error)
 
         print(
-            "Event picks failed:",
+            "Event picks unavailable."
+        )
+
+        print(
+            "Reason:",
             squad_error
         )
+
+
+# ------------------------------------------------------------
+# IMPORTANT:
+# SQUAD FAILURE MUST NOT STOP AGENT
+# ------------------------------------------------------------
+
+if not current_player_ids:
+
+    print("")
+    print(
+        "WARNING: REAL SQUAD NOT AVAILABLE."
+    )
+
+    print(
+        "Agent will continue with general analysis."
+    )
 
 
 # ============================================================
@@ -734,10 +684,6 @@ team_value = None
 bank = None
 
 
-# ------------------------------------------------------------
-# ENTRY DATA
-# ------------------------------------------------------------
-
 if team.get(
     "last_deadline_value"
 ) is not None:
@@ -759,10 +705,6 @@ if team.get(
         )
     )
 
-
-# ------------------------------------------------------------
-# MY TEAM DATA
-# ------------------------------------------------------------
 
 if current_picks:
 
@@ -788,10 +730,6 @@ if current_picks:
                     )
                 )
 
-
-# ------------------------------------------------------------
-# HISTORY FALLBACK
-# ------------------------------------------------------------
 
 if history:
 
@@ -858,15 +796,21 @@ analysed_players = []
 for player in players:
 
     player_id = integer(
-        player.get("id")
+        player.get(
+            "id"
+        )
     )
 
     team_id = integer(
-        player.get("team")
+        player.get(
+            "team"
+        )
     )
 
     position_id = integer(
-        player.get("element_type")
+        player.get(
+            "element_type"
+        )
     )
 
     team_data = team_lookup.get(
@@ -1017,6 +961,7 @@ for player in players:
         "status"
     )
 
+
     # --------------------------------------------------------
     # UPCOMING FIXTURES
     # --------------------------------------------------------
@@ -1053,6 +998,11 @@ for player in players:
         :UPCOMING_FIXTURES
     ]
 
+
+    # --------------------------------------------------------
+    # FIXTURE SCORE
+    # --------------------------------------------------------
+
     difficulty_values = [
 
         number(
@@ -1063,6 +1013,7 @@ for player in players:
         )
 
         for f in upcoming
+
     ]
 
     if difficulty_values:
@@ -1081,14 +1032,16 @@ for player in players:
 
         average_difficulty = 3
 
+
     fixture_score = clamp(
         6 - average_difficulty,
         0,
         5
     )
 
+
     # --------------------------------------------------------
-    # SCORES
+    # COMPONENT SCORES
     # --------------------------------------------------------
 
     form_score = clamp(
@@ -1125,6 +1078,11 @@ for player in players:
         chance_current / 100
     )
 
+
+    # --------------------------------------------------------
+    # POSITION WEIGHTS
+    # --------------------------------------------------------
+
     if position == "FWD":
 
         attack_weight = 1.50
@@ -1144,6 +1102,11 @@ for player in players:
 
         attack_weight = 0.40
         fixture_weight = 1.00
+
+
+    # --------------------------------------------------------
+    # AGENT SCORE
+    # --------------------------------------------------------
 
     score = (
 
@@ -1175,6 +1138,11 @@ for player in players:
 
     )
 
+
+    # --------------------------------------------------------
+    # AVAILABILITY PENALTY
+    # --------------------------------------------------------
+
     if chance_current < 50:
 
         score *= 0.40
@@ -1182,6 +1150,11 @@ for player in players:
     elif chance_current < 75:
 
         score *= 0.70
+
+
+    # --------------------------------------------------------
+    # VALUE
+    # --------------------------------------------------------
 
     if price > 0:
 
@@ -1192,6 +1165,7 @@ for player in players:
     else:
 
         value_score = 0
+
 
     analysed_players.append({
 
@@ -1220,7 +1194,10 @@ for player in players:
             int(points),
 
         "form":
-            round(form, 2),
+            round(
+                form,
+                2
+            ),
 
         "minutes":
             int(minutes),
@@ -1328,7 +1305,7 @@ for player in players:
 
 
 # ============================================================
-# 12. SORT
+# 12. SORT PLAYERS
 # ============================================================
 
 analysed_players.sort(
@@ -1351,10 +1328,13 @@ print("          TOP PLAYER ANALYSIS")
 print("========================================")
 
 for index, player in enumerate(
+
     analysed_players[
         :TOP_PLAYERS
     ],
+
     1
+
 ):
 
     print(
@@ -1476,6 +1456,7 @@ def build_lineup(
 
     lineup = []
 
+
     if not select_position(
         lineup,
         "GK",
@@ -1483,6 +1464,7 @@ def build_lineup(
     ):
 
         return None
+
 
     if not select_position(
         lineup,
@@ -1492,6 +1474,7 @@ def build_lineup(
 
         return None
 
+
     if not select_position(
         lineup,
         "MID",
@@ -1499,6 +1482,7 @@ def build_lineup(
     ):
 
         return None
+
 
     if not select_position(
         lineup,
@@ -1508,19 +1492,23 @@ def build_lineup(
 
         return None
 
+
     if len(lineup) != 11:
 
         return None
+
 
     cost = sum(
         p["price"]
         for p in lineup
     )
 
+
     score = sum(
         p["agent_score"]
         for p in lineup
     )
+
 
     return {
 
@@ -1546,6 +1534,7 @@ def build_lineup(
 
 
 model_lineups = []
+
 
 for formation in formations:
 
@@ -1615,11 +1604,13 @@ if best_model_lineup:
 
     )
 
+
     if captain_candidates:
 
         captain = (
             captain_candidates[0]
         )
+
 
     if len(
         captain_candidates
@@ -1631,7 +1622,7 @@ if best_model_lineup:
 
 
 # ============================================================
-# 17. MODEL XI
+# 17. MODEL XI OUTPUT
 # ============================================================
 
 print("")
@@ -1687,7 +1678,7 @@ else:
 
 
 # ============================================================
-# 18. CAPTAIN
+# 18. CAPTAIN OUTPUT
 # ============================================================
 
 print("")
@@ -1706,6 +1697,7 @@ if captain:
         "| Score:",
         captain["agent_score"]
     )
+
 
 if vice_captain:
 
@@ -1740,7 +1732,7 @@ if current_player_ids:
     )
 
     print(
-        "Authentication worked."
+        "Real squad loaded successfully."
     )
 
 else:
@@ -1750,9 +1742,15 @@ else:
     )
 
     print(
-        "Reason:",
-        squad_error
+        "Agent continues normally."
     )
+
+    if squad_error:
+
+        print(
+            "Reason:",
+            squad_error
+        )
 
 
 # ============================================================
@@ -1785,11 +1783,7 @@ if current_player_ids:
 else:
 
     print(
-        "Real squad unavailable."
-    )
-
-    print(
-        "Using general targets."
+        "Using general transfer targets."
     )
 
     transfer_candidates = (
@@ -1820,7 +1814,9 @@ print("----------------------------------------")
 
 for index, player in enumerate(
 
-    transfer_candidates[:20],
+    transfer_candidates[
+        :20
+    ],
 
     1
 
@@ -1843,6 +1839,7 @@ for index, player in enumerate(
 
 real_squad_players = []
 
+
 if current_player_ids:
 
     player_lookup = {
@@ -1852,6 +1849,7 @@ if current_player_ids:
         for p in analysed_players
 
     }
+
 
     for player_id in current_player_ids:
 
@@ -1877,11 +1875,15 @@ real_squad_players.sort(
 # ============================================================
 
 chips = {
+
     "history": []
+
 }
+
 
 print("")
 print("Loading chip history...")
+
 
 if history:
 
@@ -1889,6 +1891,7 @@ if history:
         "chips",
         []
     )
+
 
 print(
     "Chips found:",
@@ -1935,7 +1938,7 @@ output = {
             "FPL Autonomous Agent",
 
         "version":
-            "3.0",
+            "4.0",
 
         "generated_at":
             datetime.now(
@@ -2001,7 +2004,9 @@ output = {
         vice_captain,
 
     "transfer_candidates":
-        transfer_candidates[:50],
+        transfer_candidates[
+            :50
+        ],
 
     "chips":
         chips
@@ -2010,7 +2015,7 @@ output = {
 
 
 # ============================================================
-# 25. SAVE
+# 25. SAVE JSON
 # ============================================================
 
 with open(
@@ -2087,5 +2092,5 @@ if vice_captain:
 
 print("")
 print("========================================")
-print("       AGENT CONNECTED SUCCESSFULLY")
+print("       AGENT FINISHED SUCCESSFULLY")
 print("========================================")
