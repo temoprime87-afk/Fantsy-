@@ -79,16 +79,14 @@ else:
     print("Current squad picks: not available yet")
 
 
-# 6. Basic player analysis
+# 6. Player analysis
 print("\n=== PLAYER ANALYSIS ===")
 
-# Remove players without useful data
 valid_players = [
     p for p in players
     if p.get("minutes", 0) > 0
 ]
 
-# Top by total points
 top_points = sorted(
     valid_players,
     key=lambda p: p.get("total_points", 0),
@@ -108,7 +106,6 @@ for i, player in enumerate(top_points, 1):
     )
 
 
-# Top by form
 top_form = sorted(
     valid_players,
     key=lambda p: float(p.get("form", 0) or 0),
@@ -128,7 +125,75 @@ for i, player in enumerate(top_form, 1):
     )
 
 
-# 7. Save all collected data
+# 7. Fixture analysis
+print("\n=== FIXTURE ANALYSIS ===")
+
+team_names = {
+    t["id"]: t["name"]
+    for t in teams
+}
+
+team_fixtures = {
+    t["id"]: []
+    for t in teams
+}
+
+future_fixtures = [
+    f for f in fixtures
+    if f.get("event") is not None
+    and f.get("event") >= current_event
+]
+
+for fixture in future_fixtures:
+    home_id = fixture.get("team_h")
+    away_id = fixture.get("team_a")
+
+    if home_id in team_fixtures:
+        team_fixtures[home_id].append({
+            "gameweek": fixture.get("event"),
+            "opponent": team_names.get(away_id, "Unknown"),
+            "home": True,
+            "difficulty": fixture.get("team_h_difficulty")
+        })
+
+    if away_id in team_fixtures:
+        team_fixtures[away_id].append({
+            "gameweek": fixture.get("event"),
+            "opponent": team_names.get(home_id, "Unknown"),
+            "home": False,
+            "difficulty": fixture.get("team_a_difficulty")
+        })
+
+
+print("\nNext fixtures by team:")
+
+for team_id, team_name in team_names.items():
+
+    upcoming = sorted(
+        team_fixtures.get(team_id, []),
+        key=lambda x: x["gameweek"]
+    )[:5]
+
+    if not upcoming:
+        continue
+
+    print("\n", team_name)
+
+    for fixture in upcoming:
+        venue = "H" if fixture["home"] else "A"
+
+        print(
+            "GW",
+            fixture["gameweek"],
+            venue,
+            "vs",
+            fixture["opponent"],
+            "| Difficulty:",
+            fixture["difficulty"]
+        )
+
+
+# 8. Save all data
 data = {
     "team": team,
     "players": players,
