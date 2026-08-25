@@ -79,7 +79,56 @@ else:
     print("Current squad picks: not available yet")
 
 
-# 6. Save collected data
+# 6. Basic player analysis
+print("\n=== PLAYER ANALYSIS ===")
+
+# Remove players without useful data
+valid_players = [
+    p for p in players
+    if p.get("minutes", 0) > 0
+]
+
+# Top by total points
+top_points = sorted(
+    valid_players,
+    key=lambda p: p.get("total_points", 0),
+    reverse=True
+)[:10]
+
+print("\nTop 10 by total points:")
+
+for i, player in enumerate(top_points, 1):
+    print(
+        i,
+        player.get("web_name"),
+        "| Points:", player.get("total_points", 0),
+        "| Form:", player.get("form", 0),
+        "| Minutes:", player.get("minutes", 0),
+        "| Price:", player.get("now_cost", 0) / 10
+    )
+
+
+# Top by form
+top_form = sorted(
+    valid_players,
+    key=lambda p: float(p.get("form", 0) or 0),
+    reverse=True
+)[:10]
+
+print("\nTop 10 by form:")
+
+for i, player in enumerate(top_form, 1):
+    print(
+        i,
+        player.get("web_name"),
+        "| Form:", player.get("form", 0),
+        "| Points:", player.get("total_points", 0),
+        "| Minutes:", player.get("minutes", 0),
+        "| Price:", player.get("now_cost", 0) / 10
+    )
+
+
+# 7. Save all collected data
 data = {
     "team": team,
     "players": players,
@@ -93,5 +142,5 @@ data = {
 with open("fpl_data.json", "w", encoding="utf-8") as file:
     json.dump(data, file, ensure_ascii=False, indent=2)
 
-print("FPL data saved to fpl_data.json")
-print("\nAgent connected successfully.")
+print("\nFPL data saved to fpl_data.json")
+print("Agent connected successfully.")
