@@ -1,0 +1,25 @@
+name: FPL Agent
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * 1"
+
+jobs:
+  fpl-agent:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run FPL Agent
+        run: |
+          python --version
+          echo "FPL Agent started"
+          echo "Date: $(date -u)"
