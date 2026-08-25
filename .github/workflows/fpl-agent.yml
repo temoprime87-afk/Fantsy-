@@ -20,6 +20,4 @@ jobs:
 
       - name: Run FPL Agent
         run: |
-          python --version
-          echo "FPL Agent started"
-          echo "Date: $(date -u)"
+        python fpl_agent.py
