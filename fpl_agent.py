@@ -57,6 +57,8 @@ current_event = team.get("current_event")
 print("Current Gameweek:", current_event)
 
 # 5. Current team picks
+picks = None
+
 if current_event:
     try:
         picks = get_json(
@@ -76,4 +78,20 @@ if current_event:
 else:
     print("Current squad picks: not available yet")
 
+
+# 6. Save collected data
+data = {
+    "team": team,
+    "players": players,
+    "gameweeks": events,
+    "fpl_teams": teams,
+    "fixtures": fixtures,
+    "current_gameweek": current_event,
+    "current_picks": picks
+}
+
+with open("fpl_data.json", "w", encoding="utf-8") as file:
+    json.dump(data, file, ensure_ascii=False, indent=2)
+
+print("FPL data saved to fpl_data.json")
 print("\nAgent connected successfully.")
