@@ -22,7 +22,11 @@ team = get_json(
 )
 
 print("Team:", team.get("name"))
-print("Manager:", team.get("player_first_name"), team.get("player_last_name"))
+print(
+    "Manager:",
+    team.get("player_first_name"),
+    team.get("player_last_name")
+)
 print("Overall rank:", team.get("summary_overall_rank"))
 print("Total points:", team.get("summary_overall_points"))
 print("Team value:", team.get("last_deadline_value"))
@@ -52,11 +56,21 @@ print("Current Gameweek:", current_event)
 
 # 5. Current team picks
 if current_event:
-    picks = get_json(
-        f"https://fantasy.premierleague.com/api/entry/{TEAM_ID}/event/{current_event}/picks/"
-    )
+    try:
+        picks = get_json(
+            f"https://fantasy.premierleague.com/api/entry/{TEAM_ID}/event/{current_event}/picks/"
+        )
 
-    print("Current squad picks loaded:", len(picks.get("picks", [])))
+        print(
+            "Current squad picks loaded:",
+            len(picks.get("picks", []))
+        )
+
+    except Exception as e:
+        print(
+            "Current squad picks not available:",
+            e
+        )
 else:
     print("Current squad picks: not available yet")
 
