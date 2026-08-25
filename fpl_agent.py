@@ -1,266 +1,1596 @@
 import json
 import urllib.request
+import urllib.error
+from datetime import datetime
+
+
+# ============================================================
+# CONFIG
+# ============================================================
 
 TEAM_ID = 9623737
 
+BASE_URL = "https://fantasy.premierleague.com/api"
+
+USER_AGENT = "Mozilla/5.0 FPL-Autonomous-Agent"
+
+TOP_PLAYERS = 30
+UPCOMING_FIXTURES = 5
+
+
+# ============================================================
+# API
+# ============================================================
 
 def get_json(url):
+
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "Mozilla/5.0"}
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json"
+        }
     )
 
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+
+        with urllib.request.urlopen(
+            request,
+            timeout=30
+        ) as response:
+
+            data = response.read().decode("utf-8")
+
+            return json.loads(data)
+
+    except urllib.error.HTTPError as error:
+
+        raise RuntimeError(
+            f"HTTP {error.code}: {error.reason} - {url}"
+        )
+
+    except urllib.error.URLError as error:
+
+        raise RuntimeError(
+            f"Network error: {error.reason} - {url}"
+        )
 
 
-print("=== FPL AGENT ===")
+# ============================================================
+# SAFE HELPERS
+# ============================================================
 
-# 1. Team data
+def number(value, default=0.0):
+
+    try:
+
+        if value is None:
+            return default
+
+        return float(value)
+
+    except:
+
+        return default
+
+
+def integer(value, default=0):
+
+    try:
+
+        if value is None:
+            return default
+
+        return int(value)
+
+    except:
+
+        return default
+
+
+def clamp(value, minimum, maximum):
+
+    return max(
+        minimum,
+        min(maximum, value)
+    )
+
+
+# ============================================================
+# START
+# ============================================================
+
+print("====================================")
+print("       FPL AUTONOMOUS AGENT")
+print("====================================")
+print("")
+
+
+# ============================================================
+# 1. TEAM
+# ============================================================
+
+print("Loading team data...")
+
 team = get_json(
-    f"https://fantasy.premierleague.com/api/entry/{TEAM_ID}/"
+    f"{BASE_URL}/entry/{TEAM_ID}/"
 )
 
 print("Team:", team.get("name"))
+
 print(
     "Manager:",
     team.get("player_first_name"),
     team.get("player_last_name")
 )
-print("Overall rank:", team.get("summary_overall_rank"))
-print("Total points:", team.get("summary_overall_points"))
-print("Team value:", team.get("last_deadline_value"))
 
-# 2. FPL database
+print(
+    "Overall rank:",
+    team.get("summary_overall_rank")
+)
+
+print(
+    "Total points:",
+    team.get("summary_overall_points")
+)
+
+print(
+    "Team value:",
+    team.get("last_deadline_value")
+)
+
+
+# ============================================================
+# 2. BOOTSTRAP
+# ============================================================
+
+print("")
+print("Loading FPL database...")
+
 bootstrap = get_json(
-    "https://fantasy.premierleague.com/api/bootstrap-static/"
+    f"{BASE_URL}/bootstrap-static/"
 )
 
-players = bootstrap.get("elements", [])
-events = bootstrap.get("events", [])
-teams = bootstrap.get("teams", [])
+players = bootstrap.get(
+    "elements",
+    []
+)
 
-print("Players loaded:", len(players))
-print("Gameweeks loaded:", len(events))
-print("FPL teams loaded:", len(teams))
+events = bootstrap.get(
+    "events",
+    []
+)
 
-# 3. Fixtures
+teams = bootstrap.get(
+    "teams",
+    []
+
+)
+
+print(
+    "Players loaded:",
+    len(players)
+)
+
+print(
+    "Gameweeks loaded:",
+    len(events)
+)
+
+print(
+    "FPL teams loaded:",
+    len(teams)
+)
+
+
+# ============================================================
+# 3. FIXTURES
+# ============================================================
+
+print("")
+print("Loading fixtures...")
+
 fixtures = get_json(
-    "https://fantasy.premierleague.com/api/fixtures/"
+    f"{BASE_URL}/fixtures/"
 )
 
-print("Fixtures loaded:", len(fixtures))
+print(
+    "Fixtures loaded:",
+    len(fixtures)
+)
 
-# 4. Current Gameweek
-current_event = team.get("current_event")
 
-print("Current Gameweek:", current_event)
+# ============================================================
+# 4. CURRENT GAMEWEEK
+# ============================================================
 
-# 5. Current team picks
-picks = None
+current_event = team.get(
+    "current_event"
+)
+
+print("")
+print(
+    "Current Gameweek:",
+    current_event
+)
+
+
+# ============================================================
+# 5. TEAM LOOKUP
+# ============================================================
+
+team_lookup = {}
+
+for fpl_team in teams:
+
+    team_lookup[
+        fpl_team["id"]
+    ] = fpl_team
+
+
+# ============================================================
+# 6. POSITION LOOKUP
+# ============================================================
+
+positions = {
+
+    1: "GK",
+    2: "DEF",
+    3: "MID",
+    4: "FWD"
+
+}
+
+
+# ============================================================
+# 7. FIXTURE MAP
+# ============================================================
+
+fixture_map = {}
+
+for fixture in fixtures:
+
+    event = fixture.get("event")
+
+    if event is None:
+        continue
+
+    home_team = fixture.get(
+        "team_h"
+    )
+
+    away_team = fixture.get(
+        "team_a"
+    )
+
+    home_difficulty = fixture.get(
+        "team_h_difficulty"
+    )
+
+    away_difficulty = fixture.get(
+        "team_a_difficulty"
+    )
+
+
+    fixture_map.setdefault(
+        home_team,
+        []
+    ).append({
+
+        "event": event,
+
+        "opponent": away_team,
+
+        "home": True,
+
+        "difficulty": home_difficulty,
+
+        "finished": fixture.get(
+            "finished",
+            False
+        ),
+
+        "kickoff": fixture.get(
+            "kickoff_time"
+        )
+
+    })
+
+
+    fixture_map.setdefault(
+        away_team,
+        []
+    ).append({
+
+        "event": event,
+
+        "opponent": home_team,
+
+        "home": False,
+
+        "difficulty": away_difficulty,
+
+        "finished": fixture.get(
+            "finished",
+            False
+        ),
+
+        "kickoff": fixture.get(
+            "kickoff_time"
+        )
+
+    })
+
+
+# ============================================================
+# 8. CURRENT SQUAD
+# ============================================================
+
+current_picks = None
 
 if current_event:
+
     try:
-        picks = get_json(
-            f"https://fantasy.premierleague.com/api/entry/{TEAM_ID}/event/{current_event}/picks/"
+
+        current_picks = get_json(
+
+            f"{BASE_URL}/entry/"
+            f"{TEAM_ID}/event/"
+            f"{current_event}/picks/"
+
         )
 
         print(
             "Current squad picks loaded:",
-            len(picks.get("picks", []))
+            len(
+                current_picks.get(
+                    "picks",
+                    []
+                )
+            )
         )
 
-    except Exception as e:
+    except Exception as error:
+
         print(
             "Current squad picks not available:",
-            e
-        )
-else:
-    print("Current squad picks: not available yet")
-
-
-# 6. Team names
-team_names = {
-    t["id"]: t["name"]
-    for t in teams
-}
-
-# 7. Build upcoming fixture difficulty
-team_fixtures = {
-    t["id"]: []
-    for t in teams
-}
-
-if current_event:
-    future_fixtures = [
-        f for f in fixtures
-        if f.get("event") is not None
-        and f.get("event") >= current_event
-    ]
-else:
-    future_fixtures = fixtures
-
-
-for fixture in future_fixtures:
-
-    home_id = fixture.get("team_h")
-    away_id = fixture.get("team_a")
-
-    if home_id in team_fixtures:
-        team_fixtures[home_id].append(
-            fixture.get("team_h_difficulty", 3)
-        )
-
-    if away_id in team_fixtures:
-        team_fixtures[away_id].append(
-            fixture.get("team_a_difficulty", 3)
+            error
         )
 
 
-# 8. Calculate fixture score
-def fixture_score(player):
+# ============================================================
+# 9. PLAYER ANALYSIS
+# ============================================================
 
-    team_id = player.get("team")
+analysed_players = []
 
-    difficulties = team_fixtures.get(team_id, [])
 
-    if not difficulties:
-        return 5.0
+for player in players:
 
-    next_fixtures = difficulties[:5]
-
-    average_difficulty = (
-        sum(next_fixtures) / len(next_fixtures)
+    player_id = player.get(
+        "id"
     )
 
-    # FPL difficulty is roughly 1-5.
-    # Lower difficulty = better fixture.
-    score = 10 - (average_difficulty * 2)
-
-    return max(0, min(10, score))
-
-
-# 9. Calculate player score
-def player_score(player):
-
-    form = float(player.get("form", 0) or 0)
-
-    total_points = float(
-        player.get("total_points", 0) or 0
+    team_id = player.get(
+        "team"
     )
 
-    minutes = float(
-        player.get("minutes", 0) or 0
+    position_id = player.get(
+        "element_type"
     )
 
-    price = float(
-        player.get("now_cost", 0) or 0
+    team_data = team_lookup.get(
+        team_id,
+        {}
+    )
+
+
+    # --------------------------------------------------------
+    # BASIC DATA
+    # --------------------------------------------------------
+
+    name = player.get(
+        "web_name",
+        "Unknown"
+    )
+
+    position = positions.get(
+        position_id,
+        "?"
+    )
+
+    team_name = team_data.get(
+        "short_name",
+        "?"
+    )
+
+
+    price = number(
+        player.get(
+            "now_cost"
+        )
     ) / 10
 
-    fixture = fixture_score(player)
 
-    # Minutes reliability: 90+ minutes gets full score.
-    minutes_score = min(minutes / 90, 10)
-
-    # Normalize total points.
-    points_score = min(total_points / 20, 10)
-
-    # Form is already roughly on a 0-10 scale.
-    form_score = min(form, 10)
-
-    # Cheaper players receive a small value bonus.
-    if price > 0:
-        value_score = min(
-            total_points / price,
-            10
+    points = number(
+        player.get(
+            "total_points"
         )
+    )
+
+
+    form = number(
+        player.get(
+            "form"
+        )
+    )
+
+
+    minutes = number(
+        player.get(
+            "minutes"
+        )
+    )
+
+
+    points_per_game = number(
+        player.get(
+            "points_per_game"
+        )
+    )
+
+
+    selected = number(
+        player.get(
+            "selected_by_percent"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # ATTACKING DATA
+    # --------------------------------------------------------
+
+    goals = number(
+        player.get(
+            "goals_scored"
+        )
+    )
+
+
+    assists = number(
+        player.get(
+            "assists"
+        )
+    )
+
+
+    expected_goals = number(
+        player.get(
+            "expected_goals"
+        )
+    )
+
+
+    expected_assists = number(
+        player.get(
+            "expected_assists"
+        )
+    )
+
+
+    expected_goal_involvements = (
+        expected_goals
+        + expected_assists
+    )
+
+
+    # --------------------------------------------------------
+    # BONUS / ICT
+    # --------------------------------------------------------
+
+    bonus = number(
+        player.get(
+            "bonus"
+        )
+    )
+
+
+    ict_index = number(
+        player.get(
+            "ict_index"
+        )
+    )
+
+
+    influence = number(
+        player.get(
+            "influence"
+        )
+    )
+
+
+    creativity = number(
+        player.get(
+            "creativity"
+        )
+    )
+
+
+    threat = number(
+        player.get(
+            "threat"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # AVAILABILITY
+    # --------------------------------------------------------
+
+    chance_this_round = number(
+        player.get(
+            "chance_of_playing_this_round"
+        ),
+        100
+    )
+
+    chance_next_round = number(
+        player.get(
+            "chance_of_playing_next_round"
+        ),
+        100
+    )
+
+
+    if player.get(
+        "chance_of_playing_this_round"
+    ) is None:
+
+        chance_this_round = 100
+
+
+    if player.get(
+        "chance_of_playing_next_round"
+    ) is None:
+
+        chance_next_round = 100
+
+
+    status = player.get(
+        "status"
+    )
+
+
+    # --------------------------------------------------------
+    # UPCOMING FIXTURES
+    # --------------------------------------------------------
+
+    upcoming = []
+
+    for fixture in fixture_map.get(
+        team_id,
+        []
+    ):
+
+        if (
+            current_event is not None
+            and fixture["event"]
+            <= current_event
+        ):
+            continue
+
+        upcoming.append(
+            fixture
+        )
+
+
+    upcoming.sort(
+        key=lambda x: x["event"]
+    )
+
+
+    upcoming = upcoming[
+        :UPCOMING_FIXTURES
+    ]
+
+
+    # --------------------------------------------------------
+    # FIXTURE SCORE
+    # --------------------------------------------------------
+
+    difficulty_values = [
+
+        number(
+            fixture.get(
+                "difficulty"
+            ),
+            3
+        )
+
+        for fixture in upcoming
+
+    ]
+
+
+    if difficulty_values:
+
+        average_difficulty = (
+            sum(difficulty_values)
+            /
+            len(difficulty_values)
+        )
+
     else:
-        value_score = 0
+
+        average_difficulty = 3
+
+
+    # FDR:
+    # 1 = easiest
+    # 5 = hardest
+
+    fixture_score = (
+        6
+        -
+        average_difficulty
+    )
+
+
+    fixture_score = clamp(
+        fixture_score,
+        0,
+        5
+    )
+
+
+    # --------------------------------------------------------
+    # MINUTES RELIABILITY
+    # --------------------------------------------------------
+
+    minutes_score = clamp(
+        minutes / 1000,
+        0,
+        1
+    )
+
+
+    # --------------------------------------------------------
+    # FORM SCORE
+    # --------------------------------------------------------
+
+    form_score = clamp(
+        form / 10,
+        0,
+        2
+    )
+
+
+    # --------------------------------------------------------
+    # POINTS SCORE
+    # --------------------------------------------------------
+
+    points_score = clamp(
+        points / 200,
+        0,
+        2
+    )
+
+
+    # --------------------------------------------------------
+    # ATTACK SCORE
+    # --------------------------------------------------------
+
+    attack_score = clamp(
+        expected_goal_involvements / 10,
+        0,
+        2
+    )
+
+
+    # --------------------------------------------------------
+    # ICT SCORE
+    # --------------------------------------------------------
+
+    ict_score = clamp(
+        ict_index / 200,
+        0,
+        1
+    )
+
+
+    # --------------------------------------------------------
+    # AVAILABILITY SCORE
+    # --------------------------------------------------------
+
+    availability_score = (
+        chance_this_round
+        / 100
+    )
+
+
+    # --------------------------------------------------------
+    # FINAL AGENT SCORE
+    # --------------------------------------------------------
 
     score = (
-        form_score * 0.30
-        + points_score * 0.25
-        + minutes_score * 0.15
-        + fixture * 0.20
-        + value_score * 0.10
+
+        form_score * 2.0
+
+        + points_score * 1.5
+
+        + points_per_game * 0.25
+
+        + minutes_score * 1.0
+
+        + fixture_score * 0.8
+
+        + attack_score * 1.2
+
+        + ict_score * 0.5
+
+        + bonus * 0.02
+
+        + availability_score * 1.0
+
     )
 
-    return round(score, 2)
+
+    # Injury / availability penalty
+
+    if chance_this_round < 50:
+
+        score *= 0.40
+
+    elif chance_this_round < 75:
+
+        score *= 0.70
 
 
-# 10. Analyze players
-print("\n=== PLAYER SCORE ANALYSIS ===")
+    # --------------------------------------------------------
+    # VALUE SCORE
+    # --------------------------------------------------------
 
-valid_players = [
-    p for p in players
-    if p.get("minutes", 0) > 0
-]
+    if price > 0:
 
-for player in valid_players:
-    player["agent_score"] = player_score(player)
+        value_score = (
+            score / price
+        )
+
+    else:
+
+        value_score = 0
 
 
-top_players = sorted(
-    valid_players,
-    key=lambda p: p.get("agent_score", 0),
+    analysed_players.append({
+
+        "id": player_id,
+
+        "name": name,
+
+        "position": position,
+
+        "position_id": position_id,
+
+        "team_id": team_id,
+
+        "team": team_name,
+
+        "price": round(
+            price,
+            1
+        ),
+
+        "points": int(
+            points
+        ),
+
+        "form": round(
+            form,
+            2
+        ),
+
+        "minutes": int(
+            minutes
+        ),
+
+        "points_per_game": round(
+            points_per_game,
+            2
+        ),
+
+        "goals": int(
+            goals
+        ),
+
+        "assists": int(
+            assists
+        ),
+
+        "expected_goals": round(
+            expected_goals,
+            2
+        ),
+
+        "expected_assists": round(
+            expected_assists,
+            2
+        ),
+
+        "expected_goal_involvements": round(
+            expected_goal_involvements,
+            2
+        ),
+
+        "bonus": int(
+            bonus
+        ),
+
+        "ict_index": round(
+            ict_index,
+            2
+        ),
+
+        "influence": round(
+            influence,
+            2
+        ),
+
+        "creativity": round(
+            creativity,
+            2
+        ),
+
+        "threat": round(
+            threat,
+            2
+        ),
+
+        "selected_by_percent": round(
+            selected,
+            2
+        ),
+
+        "chance_this_round":
+            chance_this_round,
+
+        "chance_next_round":
+            chance_next_round,
+
+        "status": status,
+
+        "average_fixture_difficulty":
+            round(
+                average_difficulty,
+                2
+            ),
+
+        "fixture_score":
+            round(
+                fixture_score,
+                2
+            ),
+
+        "agent_score":
+            round(
+                score,
+                3
+            ),
+
+        "value_score":
+            round(
+                value_score,
+                3
+            ),
+
+        "upcoming_fixtures":
+            upcoming
+
+    })
+
+
+# ============================================================
+# 10. SORT
+# ============================================================
+
+analysed_players.sort(
+    key=lambda x: x["agent_score"],
     reverse=True
-)[:20]
+)
 
 
-print("\nTop 20 players by Agent Score:")
+# ============================================================
+# 11. TOP PLAYERS
+# ============================================================
 
-for i, player in enumerate(top_players, 1):
+print("")
+print("====================================")
+print("       TOP PLAYER ANALYSIS")
+print("====================================")
+
+for index, player in enumerate(
+    analysed_players[:TOP_PLAYERS],
+    1
+):
 
     print(
-        i,
-        player.get("web_name"),
-        "| Score:",
-        player.get("agent_score"),
-        "| Form:",
-        player.get("form", 0),
-        "| Points:",
-        player.get("total_points", 0),
-        "| Minutes:",
-        player.get("minutes", 0),
-        "| Price:",
-        player.get("now_cost", 0) / 10,
-        "| Fixture:",
-        round(fixture_score(player), 2)
+        f"{index}. "
+        f"{player['name']} | "
+        f"{player['team']} | "
+        f"{player['position']} | "
+        f"Score {player['agent_score']} | "
+        f"Form {player['form']} | "
+        f"Points {player['points']} | "
+        f"Min {player['minutes']} | "
+        f"Price {player['price']}"
     )
 
 
-# 11. Save data
-data = {
-    "team": team,
-    "players": players,
-    "gameweeks": events,
-    "fpl_teams": teams,
-    "fixtures": fixtures,
-    "current_gameweek": current_event,
-    "current_picks": picks,
-    "top_players": [
-        {
-            "id": p.get("id"),
-            "name": p.get("web_name"),
-            "position": p.get("element_type"),
-            "team": p.get("team"),
-            "price": p.get("now_cost", 0) / 10,
-            "form": p.get("form", 0),
-            "total_points": p.get("total_points", 0),
-            "minutes": p.get("minutes", 0),
-            "agent_score": p.get("agent_score", 0)
-        }
-        for p in top_players
+# ============================================================
+# 12. BEST PLAYERS BY POSITION
+# ============================================================
+
+def best_by_position(
+    position,
+    count
+):
+
+    candidates = [
+
+        player
+
+        for player in analysed_players
+
+        if player["position"] == position
+
     ]
+
+    return candidates[:count]
+
+
+best_goalkeepers = best_by_position(
+    "GK",
+    5
+)
+
+best_defenders = best_by_position(
+    "DEF",
+    10
+)
+
+best_midfielders = best_by_position(
+    "MID",
+    10
+)
+
+best_forwards = best_by_position(
+    "FWD",
+    10
+)
+
+
+# ============================================================
+# 13. MODEL STARTING XI
+# ============================================================
+
+formations = [
+
+    (3, 4, 3),
+    (3, 5, 2),
+    (4, 3, 3),
+    (4, 4, 2),
+    (4, 5, 1),
+    (5, 3, 2),
+    (5, 4, 1)
+
+]
+
+
+def team_count_ok(
+    selected,
+    candidate
+):
+
+    same_team = sum(
+
+        1
+
+        for player in selected
+
+        if player["team_id"]
+        == candidate["team_id"]
+
+    )
+
+    return same_team < 3
+
+
+def build_lineup(
+    formation
+):
+
+    defenders_needed = formation[0]
+    midfielders_needed = formation[1]
+    forwards_needed = formation[2]
+
+
+    lineup = []
+
+
+    # GK
+
+    goalkeeper_candidates = (
+        best_by_position(
+            "GK",
+            20
+        )
+    )
+
+    for player in goalkeeper_candidates:
+
+        if team_count_ok(
+            lineup,
+            player
+        ):
+
+            lineup.append(
+                player
+            )
+
+            break
+
+
+    # DEF
+
+    for player in best_by_position(
+        "DEF",
+        30
+    ):
+
+        if len([
+            x for x in lineup
+            if x["position"] == "DEF"
+        ]) >= defenders_needed:
+
+            break
+
+        if team_count_ok(
+            lineup,
+            player
+        ):
+
+            lineup.append(
+                player
+            )
+
+
+    # MID
+
+    for player in best_by_position(
+        "MID",
+        40
+    ):
+
+        if len([
+            x for x in lineup
+            if x["position"] == "MID"
+        ]) >= midfielders_needed:
+
+            break
+
+        if team_count_ok(
+            lineup,
+            player
+        ):
+
+            lineup.append(
+                player
+            )
+
+
+    # FWD
+
+    for player in best_by_position(
+        "FWD",
+        30
+    ):
+
+        if len([
+            x for x in lineup
+            if x["position"] == "FWD"
+        ]) >= forwards_needed:
+
+            break
+
+        if team_count_ok(
+            lineup,
+            player
+        ):
+
+            lineup.append(
+                player
+            )
+
+
+    if len(lineup) != 11:
+
+        return None
+
+
+    total_cost = sum(
+        player["price"]
+        for player in lineup
+    )
+
+
+    total_score = sum(
+        player["agent_score"]
+        for player in lineup
+    )
+
+
+    return {
+
+        "formation":
+            formation,
+
+        "players":
+            lineup,
+
+        "cost":
+            round(
+                total_cost,
+                1
+            ),
+
+        "score":
+            round(
+                total_score,
+                3
+            )
+
+    }
+
+
+model_lineups = []
+
+for formation in formations:
+
+    lineup = build_lineup(
+        formation
+    )
+
+    if lineup:
+
+        model_lineups.append(
+            lineup
+        )
+
+
+model_lineups.sort(
+    key=lambda x: x["score"],
+    reverse=True
+)
+
+
+best_model_lineup = (
+    model_lineups[0]
+    if model_lineups
+    else None
+)
+
+
+# ============================================================
+# 14. CAPTAIN / VICE CAPTAIN
+# ============================================================
+
+captain_candidates = []
+
+
+if best_model_lineup:
+
+    captain_candidates = sorted(
+
+        best_model_lineup["players"],
+
+        key=lambda x:
+        (
+            x["agent_score"]
+            +
+            x["fixture_score"]
+            +
+            x["expected_goal_involvements"]
+            * 0.5
+        ),
+
+        reverse=True
+
+    )
+
+
+captain = (
+    captain_candidates[0]
+    if len(captain_candidates) > 0
+    else None
+)
+
+
+vice_captain = (
+    captain_candidates[1]
+    if len(captain_candidates) > 1
+    else None
+)
+
+
+# ============================================================
+# 15. PRINT LINEUP
+# ============================================================
+
+print("")
+print("====================================")
+print("       MODEL STARTING XI")
+print("====================================")
+
+
+if best_model_lineup:
+
+    print(
+        "Formation:",
+        best_model_lineup[
+            "formation"
+        ]
+    )
+
+    print(
+        "Cost:",
+        best_model_lineup[
+            "cost"
+        ]
+    )
+
+    print(
+        "Score:",
+        best_model_lineup[
+            "score"
+        ]
+    )
+
+    print("")
+
+    for player in best_model_lineup[
+        "players"
+    ]:
+
+        print(
+            player["position"],
+            "|",
+            player["name"],
+            "|",
+            player["team"],
+            "| Score:",
+            player["agent_score"]
+        )
+
+
+else:
+
+    print(
+        "Could not build model XI."
+    )
+
+
+# ============================================================
+# 16. CAPTAIN
+# ============================================================
+
+print("")
+print("====================================")
+print("       CAPTAIN ANALYSIS")
+print("====================================")
+
+
+if captain:
+
+    print(
+        "Captain:",
+        captain["name"],
+        "|",
+        captain["team"],
+        "| Score:",
+        captain["agent_score"]
+    )
+
+else:
+
+    print(
+        "Captain unavailable."
+    )
+
+
+if vice_captain:
+
+    print(
+        "Vice-Captain:",
+        vice_captain["name"],
+        "|",
+        vice_captain["team"],
+        "| Score:",
+        vice_captain["agent_score"]
+    )
+
+
+# ============================================================
+# 17. TRANSFER CANDIDATES
+# ============================================================
+
+print("")
+print("====================================")
+print("       TRANSFER CANDIDATES")
+print("====================================")
+
+
+transfer_candidates = []
+
+
+if current_picks:
+
+    current_player_ids = {
+
+        pick["element"]
+
+        for pick in current_picks.get(
+            "picks",
+            []
+        )
+
+    }
+
+
+    transfer_candidates = [
+
+        player
+
+        for player in analysed_players
+
+        if player["id"]
+        not in current_player_ids
+
+    ]
+
+
+else:
+
+    transfer_candidates = analysed_players
+
+
+for index, player in enumerate(
+    transfer_candidates[:20],
+    1
+):
+
+    print(
+        f"{index}. "
+        f"{player['name']} | "
+        f"{player['position']} | "
+        f"{player['team']} | "
+        f"Score {player['agent_score']} | "
+        f"Value {player['value_score']}"
+    )
+
+
+# ============================================================
+# 18. CHIP DATA
+# ============================================================
+
+chips = {
+
+    "wildcard": None,
+
+    "free_hit": None,
+
+    "bench_boost": None,
+
+    "triple_captain": None
+
 }
 
-with open("fpl_data.json", "w", encoding="utf-8") as file:
+
+# The FPL entry history endpoint can be used later
+# to determine exact chip usage.
+#
+# We deliberately keep this safe and separate for now.
+
+
+try:
+
+    history = get_json(
+        f"{BASE_URL}/entry/"
+        f"{TEAM_ID}/history/"
+    )
+
+    chips_used = history.get(
+        "chips",
+        []
+    )
+
+    chips["history"] = chips_used
+
+except Exception as error:
+
+    print(
+        "Chip history not available:",
+        error
+    )
+
+    chips["history"] = []
+
+
+# ============================================================
+# 19. BUDGET
+# ============================================================
+
+team_value_raw = number(
+    team.get(
+        "last_deadline_value"
+    )
+)
+
+
+if team_value_raw > 0:
+
+    team_value = (
+        team_value_raw / 10
+    )
+
+else:
+
+    team_value = None
+
+
+bank = number(
+    team.get(
+        "last_deadline_bank"
+    )
+)
+
+
+if bank > 0:
+
+    bank = bank / 10
+
+else:
+
+    bank = None
+
+
+budget_data = {
+
+    "team_value":
+        team_value,
+
+    "bank":
+        bank,
+
+    "last_deadline_value_raw":
+        team.get(
+            "last_deadline_value"
+        ),
+
+    "last_deadline_bank_raw":
+        team.get(
+            "last_deadline_bank"
+        )
+
+}
+
+
+# ============================================================
+# 20. FINAL DATA OBJECT
+# ============================================================
+
+output = {
+
+    "agent": {
+
+        "name":
+            "FPL Autonomous Agent",
+
+        "version":
+            "1.0",
+
+        "generated_at":
+            datetime.utcnow().isoformat()
+            + "Z"
+
+    },
+
+    "team": team,
+
+    "team_id":
+        TEAM_ID,
+
+    "current_gameweek":
+        current_event,
+
+    "budget":
+        budget_data,
+
+    "players":
+        players,
+
+    "analysed_players":
+        analysed_players,
+
+    "gameweeks":
+        events,
+
+    "fpl_teams":
+        teams,
+
+    "fixtures":
+        fixtures,
+
+    "current_picks":
+        current_picks,
+
+    "model_lineups":
+        model_lineups,
+
+    "best_model_lineup":
+        best_model_lineup,
+
+    "captain": captain,
+
+    "vice_captain":
+        vice_captain,
+
+    "transfer_candidates":
+        transfer_candidates[:50],
+
+    "chips":
+        chips
+
+}
+
+
+# ============================================================
+# 21. SAVE JSON
+# ============================================================
+
+with open(
+    "fpl_data.json",
+    "w",
+    encoding="utf-8"
+) as file:
+
     json.dump(
-        data,
+        output,
         file,
         ensure_ascii=False,
         indent=2
     )
 
-print("\nFPL data saved to fpl_data.json")
-print("Agent connected successfully.")
+
+print("")
+print("====================================")
+print("       DATA SAVED")
+print("====================================")
+
+print(
+    "FPL data saved to fpl_data.json"
+)
+
+print(
+    "Analysed players:",
+    len(analysed_players)
+)
+
+print(
+    "Transfer candidates:",
+    len(transfer_candidates)
+)
+
+print("")
+print(
+    "Agent connected successfully."
+    )
